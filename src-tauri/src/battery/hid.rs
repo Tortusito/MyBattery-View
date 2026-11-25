@@ -28,8 +28,7 @@ pub fn read_hid_batteries() -> Vec<BatteryDevice> {
     let mut seen_paths = HashSet::new();
 
     unsafe {
-        let mut hid_guid = windows::core::GUID::default();
-        HidD_GetHidGuid(&mut hid_guid);
+        let hid_guid = HidD_GetHidGuid();
         let Ok(dev_info) = SetupDiGetClassDevsW(
             Some(&hid_guid),
             None,

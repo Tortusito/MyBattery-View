@@ -2,7 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 const CATEGORY_ORDER = ['headphones', 'mouse', 'keyboard', 'gamepad', 'generic'];
-const CURRENT_VERSION = '1.0.6';
+const CURRENT_VERSION = '1.0.5';
 
 let settings = {};
 let devices = [];

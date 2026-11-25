@@ -1,6 +1,6 @@
 [package]
 name = "mybattery-view"
-version = "1.0.6"
+version = "1.0.5"
 description = "Monitor de batería en tiempo real para dispositivos Bluetooth e inalámbricos en Windows"
 authors = ["Wyforce"]
 license = "MIT"
@@ -21,6 +21,7 @@ windows = { version = "0.58", features = [
   "Win32_Devices_Properties",
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Storage_FileSystem",
+  "Win32_Security",
   "Win32_System_IO",
   "Win32_UI_Input_XboxController",
   "Win32_UI_WindowsAndMessaging",
