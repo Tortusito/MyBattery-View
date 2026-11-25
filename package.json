@@ -1,6 +1,6 @@
 {
   "name": "mybattery-view",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Live battery monitor for all your Bluetooth and wireless HID devices",
   "author": "Wyforce",
   "main": "src/main/main.js",
