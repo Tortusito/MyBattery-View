@@ -8,6 +8,10 @@ mod bluetooth_pnp;
 #[cfg(windows)]
 mod hid;
 #[cfg(windows)]
+mod logitech;
+#[cfg(windows)]
+mod razer;
+#[cfg(windows)]
 mod xinput;
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,6 +103,14 @@ pub fn collect_all_devices() -> Vec<BatteryDevice> {
         }
 
         for dev in hid::read_hid_batteries() {
+            map.entry(dev.name.to_lowercase()).or_insert(dev);
+        }
+
+        for dev in logitech::read_logitech_batteries() {
+            map.entry(dev.name.to_lowercase()).or_insert(dev);
+        }
+
+        for dev in razer::read_razer_batteries() {
             map.entry(dev.name.to_lowercase()).or_insert(dev);
         }
 

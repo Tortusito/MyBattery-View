@@ -5,9 +5,17 @@ use windows::Devices::Bluetooth::GenericAttributeProfile::{
 use windows::Devices::Bluetooth::{BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
 use windows::Devices::Enumeration::DeviceInformation;
 use windows::Storage::Streams::DataReader;
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 
 pub fn read_ble_batteries() -> Vec<BatteryDevice> {
-    read_ble_inner().unwrap_or_default()
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let res = read_ble_inner().unwrap_or_default();
+        if hr.is_ok() {
+            CoUninitialize();
+        }
+        res
+    }
 }
 
 fn read_ble_inner() -> windows::core::Result<Vec<BatteryDevice>> {
@@ -53,10 +61,19 @@ fn read_ble_inner() -> windows::core::Result<Vec<BatteryDevice>> {
             }
         }
 
-        let Ok(chars_op) = service.GetCharacteristicsForUuidWithCacheModeAsync(level_uuid, BluetoothCacheMode::Uncached) else {
-            continue;
+        let chars_res = match service.GetCharacteristicsForUuidWithCacheModeAsync(level_uuid, BluetoothCacheMode::Uncached) {
+            Ok(op) => match op.get() {
+                Ok(r) if r.Status().ok() == Some(GattCommunicationStatus::Success) => r,
+                _ => match service.GetCharacteristicsForUuidWithCacheModeAsync(level_uuid, BluetoothCacheMode::Cached) {
+                    Ok(op2) => match op2.get() {
+                        Ok(r2) => r2,
+                        Err(_) => continue,
+                    },
+                    Err(_) => continue,
+                },
+            },
+            Err(_) => continue,
         };
-        let Ok(chars_res) = chars_op.get() else { continue };
         if chars_res.Status()? != GattCommunicationStatus::Success {
             continue;
         }
@@ -65,8 +82,19 @@ fn read_ble_inner() -> windows::core::Result<Vec<BatteryDevice>> {
             continue;
         }
         let Ok(ch) = chars.GetAt(0) else { continue };
-        let Ok(read_op) = ch.ReadValueWithCacheModeAsync(BluetoothCacheMode::Uncached) else { continue };
-        let Ok(read_res) = read_op.get() else { continue };
+        let read_res = match ch.ReadValueWithCacheModeAsync(BluetoothCacheMode::Uncached) {
+            Ok(op) => match op.get() {
+                Ok(r) if r.Status().ok() == Some(GattCommunicationStatus::Success) => r,
+                _ => match ch.ReadValueWithCacheModeAsync(BluetoothCacheMode::Cached) {
+                    Ok(op2) => match op2.get() {
+                        Ok(r2) => r2,
+                        Err(_) => continue,
+                    },
+                    Err(_) => continue,
+                },
+            },
+            Err(_) => continue,
+        };
         if read_res.Status()? != GattCommunicationStatus::Success {
             continue;
         }
