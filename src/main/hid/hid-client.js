@@ -1,0 +1,104 @@
+// Main-process proxy to the isolated node-hid worker (see hid-worker.js).
+// All HID enumeration / battery reads / capture go through here. If the worker process
+// dies (e.g. a native heap crash inside node-hid), the main app stays alive: pending calls
+// reject, and the next call transparently respawns the worker.
+const { utilityProcess } = require('electron');
+const path = require('path');
+
+const WORKER = path.join(__dirname, 'hid-worker.js');
+const WORKER_EXITED = 'hid worker exited';
+
+let child = null;
+let seq = 0;
+const pending = new Map(); // requestId -> { resolve, reject, timer }
+
+function rejectAll(reason) {
+  for (const [, p] of pending) {
+    clearTimeout(p.timer);
+    p.reject(new Error(reason));
+  }
+  pending.clear();
+}
+
+function spawn() {
+  const proc = utilityProcess.fork(WORKER, [], { stdio: 'ignore' });
+  child = proc;
+  proc.on('message', (msg) => {
+    const p = pending.get(msg.id);
+    if (!p) return;
+    if (msg.progress) {
+      if (p.onProgress) p.onProgress(msg.progress);
+      return;
+    }
+    pending.delete(msg.id);
+    clearTimeout(p.timer);
+    if (msg.ok) p.resolve(msg.result);
+    else p.reject(new Error(msg.error));
+  });
+  // A crash or clean exit lands here; drop the handle so the next call respawns.
+  // A stale exit from a worker that has already been replaced must not touch the new one.
+  proc.on('exit', () => {
+    if (child !== proc) return;
+    child = null;
+    rejectAll(WORKER_EXITED);
+  });
+}
+
+// The worker is killed after a scan; forget it at once so the next call starts a fresh one
+// instead of posting into a process that is still shutting down.
+function recycle() {
+  const proc = child;
+  child = null;
+  if (proc) { try { proc.kill(); } catch (_) {} }
+}
+
+function call(cmd, args, timeoutMs, onProgress = null) {
+  return new Promise((resolve, reject) => {
+    if (!child) {
+      try { spawn(); } catch (e) { return reject(e); }
+    }
+    const id = ++seq;
+    const timer = setTimeout(() => {
+      if (pending.has(id)) { pending.delete(id); reject(new Error(`${cmd} timed out`)); }
+    }, timeoutMs);
+    pending.set(id, { resolve, reject, timer, onProgress });
+    try {
+      child.postMessage({ id, cmd, args });
+    } catch (e) {
+      pending.delete(id);
+      clearTimeout(timer);
+      reject(e);
+    }
+  });
+}
+
+module.exports = {
+  // Listing devices can take several seconds on PCs with many USB devices or a slow receiver.
+  enumerate: () => call('enumerate', [], 20000),
+  // Headroom over the drivers' own internal timeouts (generic input-mode waits up to 8s). A
+  // worker that dies mid-read says nothing about the device, so that gets one more try.
+  readBattery: (driverId, device, profile) => {
+    const read = () => call('readBattery', [driverId, device, profile || null], 12000);
+    return read().catch((e) => {
+      if (e.message === WORKER_EXITED) return read();
+      throw e;
+    });
+  },
+  identify: (driverId, device) => call('identify', [driverId, device], 4000),
+  // Must exceed inspector.js CAPTURE_MS (30s scan) plus channel setup. A scan leaves handles
+  // open on every channel of the device, and only ending the process releases them safely
+  // (see session.js), so the worker is recycled afterwards.
+  // If node-hid crashes the worker mid-scan, show what it had found up to then.
+  capture: (device) => {
+    let seen = [];
+    return call('capture', [device], 45000, (frames) => { seen = frames; })
+      .catch((e) => {
+        if (e.message === WORKER_EXITED && seen.length) return seen;
+        throw e;
+      })
+      .finally(recycle);
+  },
+  // Ends a running scan early; capture() then resolves with what it had seen. No worker, no scan.
+  cancelCapture: () => (child ? call('cancelCapture', [], 4000) : Promise.resolve(false)),
+  stop: () => { if (child) { try { child.kill(); } catch (_) {} child = null; } rejectAll('hid client stopped'); },
+};

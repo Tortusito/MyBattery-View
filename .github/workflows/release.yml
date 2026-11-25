@@ -1,0 +1,71 @@
+name: Release
+
+# Build the Windows installer and publish a GitHub Release whenever a version
+# tag (e.g. v1.1.2) is pushed. Runs on a Windows CI runner, which has the symlink
+# privileges electron-builder's winCodeSign step needs — so it avoids the local
+# "A required privilege is not held by the client" build failure.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to create the GitHub Release and upload assets
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      # electron-builder 26 uploads files in parallel and each upload creates the release if
+      # it is missing, which made two drafts for v2.0.0 with the files split between them.
+      # Creating the draft first gives them one release to share.
+      - name: Create the draft release
+        run: gh release create $env:GITHUB_REF_NAME --draft --title $env:GITHUB_REF_NAME --notes ""
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # electron-builder reads GH_TOKEN to publish. By default it creates a
+      # *draft* release with the installer .exe, latest.yml and blockmap
+      # attached — review it on the Releases page and click "Publish" to make it
+      # live to the auto-updater.
+      - name: Build and publish
+        run: npm run dist -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and upload the branded installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run installer
+          gh release upload $env:GITHUB_REF_NAME (Get-ChildItem dist/MyBattery-View-Installer-*.exe).FullName --clobber
+
+      # Publish a SHA-256 checksum alongside the installer. The app isn't code-signed,
+      # so this gives users a way to verify the download is byte-for-byte what CI built.
+      - name: Generate and upload SHA-256 checksum
+        shell: pwsh
+        run: |
+          # electron-builder publishes the asset with spaces replaced by dashes; record
+          # that name so `sha256sum -c` matches the file people actually download.
+          Get-ChildItem dist/*.exe | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            $name = $_.Name -replace ' ', '-'
+            Write-Host "SHA256: $hash  $name"
+            "$hash  $name"
+          } | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+          gh release upload $env:GITHUB_REF_NAME dist/SHA256SUMS.txt --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

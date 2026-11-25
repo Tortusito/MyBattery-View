@@ -1,0 +1,74 @@
+{
+  "name": "mybattery-view",
+  "version": "1.0.0",
+  "description": "Live battery monitor for all your Bluetooth and wireless HID devices",
+  "author": "Wyforce",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "prestart": "node scripts/build-batteries.js",
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "predist": "node scripts/build-batteries.js",
+    "dist": "electron-builder",
+    "installer": "node scripts/build-installer.js"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.11",
+    "node-hid": "^3.1.2"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.wyforce.mybatteryview",
+    "productName": "MyBattery-View",
+    "asar": false,
+    "npmRebuild": false,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Tortusito",
+        "repo": "MyBattery-View"
+      }
+    ],
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "!**/node_modules/node-hid/hidapi/**",
+      "!**/node_modules/node-hid/src/**",
+      "!**/node_modules/node-hid/prebuilds/!(HID-win32-x64)/**"
+    ],
+    "afterPack": "scripts/after-pack.js",
+    "electronLanguages": [
+      "en-US",
+      "es",
+      "es-419",
+      "zh-CN",
+      "zh-TW",
+      "he",
+      "pt-BR",
+      "pt-PT",
+      "ru"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "MyBattery-View-Update-${version}.${ext}",
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MyBattery-View"
+    }
+  },
+  "allowScripts": {
+    "electron@45.2.1": true,
+    "node-hid@3.3.0": true
+  }
+}

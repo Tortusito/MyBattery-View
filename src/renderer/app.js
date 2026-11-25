@@ -1,0 +1,1043 @@
+const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 52;
+
+const state = {
+  view: 'dashboard',
+  saved: {},
+  live: [],
+  cardEls: new Map(),
+  calibration: null,
+  showHidden: false,
+};
+
+function paintDeviceIcon(el, dev) {
+  el.innerHTML = iconSvg(deviceIconName(dev));
+}
+
+document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = iconSvg(el.dataset.icon, 18); });
+
+function timeAgo(ts) {
+  if (!ts) return 'never';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+// ---------- battery history ----------
+
+// Even-spaced polyline over the most recent samples (y inverted: 100% at top).
+function buildSparkPoints(history) {
+  const pts = (history || []).slice(-40);
+  if (pts.length < 2) return null;
+  const n = pts.length;
+  return pts.map((p, i) => {
+    const x = (i / (n - 1)) * 100;
+    const y = 30 - (Math.max(0, Math.min(100, p.c)) / 100) * 30;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+}
+
+function sparkColor(pct, charging) {
+  if (charging) return 'var(--level-high)';
+  if (pct == null) return 'var(--text-tertiary)';
+  if (pct <= 20) return 'var(--level-low)';
+  if (pct <= 45) return 'var(--level-mid)';
+  return 'var(--level-high)';
+}
+
+function formatDuration(hours) {
+  if (hours >= 24) {
+    const d = Math.floor(hours / 24);
+    const h = Math.round(hours - d * 24);
+    return h ? `${d}d ${h}h` : `${d}d`;
+  }
+  if (hours >= 1) return `${Math.round(hours)}h`;
+  return `${Math.max(5, Math.round(hours * 60))}m`;
+}
+
+// Time-to-empty from the whole persisted history. We sum every genuine *discharging*
+// interval (skipping charging stretches and implausibly long gaps) to get an average
+// drain rate, then divide the live capacity by it. Because the history is persisted, this
+// keeps refining across restarts and picks up where it left off rather than resetting.
+// estimateHoursLeft() lives in estimate.js (loaded before this script) so it can be
+// unit-tested in Node without the DOM.
+
+function renderHistory(card, dev, charging, offline) {
+  const points = offline ? null : buildSparkPoints(dev.history);
+  if (points) {
+    card.sparkLine.setAttribute('points', points);
+    const pct = dev.lastReading ? dev.lastReading.capacity : null;
+    card.sparkWrap.style.setProperty('--spark', sparkColor(pct, charging));
+    card.sparkWrap.hidden = false;
+  } else {
+    card.sparkWrap.hidden = true;
+  }
+
+  let est = '';
+  if (!offline && !charging && hasRecentReading(dev)) {
+    const currentCap = dev.lastReading ? dev.lastReading.capacity : null;
+    const hoursLeft = estimateHoursLeft(dev.history, currentCap);
+    if (hoursLeft != null) est = `~${formatDuration(hoursLeft)} left`;
+  }
+  card.estimateEl.textContent = est;
+}
+
+// ---------- window controls ----------
+
+document.getElementById('win-min').addEventListener('click', () => window.batteryHub.minimizeWindow && window.batteryHub.minimizeWindow());
+document.getElementById('win-close').addEventListener('click', () => window.batteryHub.closeWindow && window.batteryHub.closeWindow());
+
+// ---------- liquid-glass specular tracking ----------
+// The reflection highlight on each card follows the cursor (CSS reads --mx/--my
+// in the .device-card::after radial gradient). Delegated + rAF-throttled.
+
+let specularRaf = 0;
+document.addEventListener('mousemove', (e) => {
+  // Cheapest guards first — this runs on every mouse move, so skip the DOM walk
+  // entirely while a frame is already queued or motion is switched off.
+  if (specularRaf || document.body.classList.contains('reduce-motion')) return;
+  const card = e.target.closest && e.target.closest('.device-card');
+  if (!card) return;
+  specularRaf = requestAnimationFrame(() => {
+    specularRaf = 0;
+    const r = card.getBoundingClientRect();
+    card.style.setProperty('--mx', `${((e.clientX - r.left) / r.width) * 100}%`);
+    card.style.setProperty('--my', `${((e.clientY - r.top) / r.height) * 100}%`);
+  });
+});
+
+// ---------- navigation ----------
+
+function switchView(view) {
+  state.view = view;
+  document.querySelectorAll('.nav-item').forEach((el) => el.classList.toggle('active', el.dataset.view === view));
+  document.querySelectorAll('.view').forEach((el) => el.classList.remove('active'));
+  document.getElementById(`view-${view}`).classList.add('active');
+  if (view === 'dashboard') refreshDashboard();
+  if (view === 'discover') refreshDiscover();
+  if (view === 'settings') refreshSettings();
+}
+
+document.querySelectorAll('.nav-item[data-view]').forEach((el) => {
+  el.addEventListener('click', (e) => {
+    if (document.body.classList.contains('reduce-motion')) { switchView(el.dataset.view); return; }
+    // ripple bursting out from the click point
+    const r = el.getBoundingClientRect();
+    const size = Math.max(r.width, r.height);
+    const ripple = document.createElement('span');
+    ripple.className = 'nav-ripple';
+    ripple.style.width = ripple.style.height = `${size}px`;
+    ripple.style.left = `${e.clientX - r.left - size / 2}px`;
+    ripple.style.top = `${e.clientY - r.top - size / 2}px`;
+    el.appendChild(ripple);
+    ripple.addEventListener('animationend', () => ripple.remove());
+    switchView(el.dataset.view);
+  });
+});
+
+// ---------- dashboard ----------
+
+function orderedIds() {
+  const urgent = currentSettings.sortMode !== 'manual';
+  return Object.keys(state.saved).sort((a, b) => (urgent
+    ? urgencyCompare(state.saved[a], state.saved[b])
+    : (state.saved[a].order ?? 1e9) - (state.saved[b].order ?? 1e9)));
+}
+
+// Levels change while the app is open, so keep the urgent order current without rebuilding.
+function resortCards() {
+  if (currentSettings.sortMode === 'manual') return;
+  const grid = document.getElementById('device-grid');
+  const wanted = orderedIds().map((id) => state.cardEls.get(id)).filter(Boolean).map((c) => c.el);
+  if (wanted.every((el, i) => grid.children[i] === el)) return;
+  wanted.forEach((el) => { el.style.animation = 'none'; grid.appendChild(el); });
+}
+
+// "N hidden — Show/Hide" strip under the grid; the only route back for a hidden device.
+function renderHiddenBar(hiddenCount) {
+  const bar = document.getElementById('hidden-bar');
+  const label = document.getElementById('hidden-count');
+  const toggle = document.getElementById('hidden-toggle');
+  if (!bar) return;
+  bar.hidden = hiddenCount === 0;
+  if (hiddenCount === 0) return;
+  label.textContent = `${hiddenCount} hidden device${hiddenCount > 1 ? 's' : ''}`;
+  toggle.textContent = state.showHidden ? 'Hide' : 'Show';
+}
+
+async function refreshDashboard() {
+  state.saved = await window.batteryHub.listSavedDevices();
+  const grid = document.getElementById('device-grid');
+  const empty = document.getElementById('dashboard-empty');
+  const allIds = orderedIds();
+  // Hidden devices drop off the grid unless the user has expanded them.
+  const hiddenIds = allIds.filter((id) => state.saved[id].hidden);
+  const ids = state.showHidden ? allIds : allIds.filter((id) => !state.saved[id].hidden);
+
+  renderHiddenBar(hiddenIds.length);
+
+  empty.hidden = allIds.length > 0;
+  grid.innerHTML = '';
+  state.cardEls.clear();
+
+  ids.forEach((id, i) => {
+    const card = buildDeviceCard(state.saved[id]);
+    card.el.style.setProperty('--i', i);
+    card.el.classList.toggle('is-hidden-device', !!state.saved[id].hidden);
+    grid.appendChild(card.el);
+    state.cardEls.set(id, card);
+  });
+}
+
+document.getElementById('hidden-toggle').addEventListener('click', () => {
+  state.showHidden = !state.showHidden;
+  refreshDashboard();
+});
+
+// ---------- drag-to-reorder ----------
+
+function wireGridDnd() {
+  const grid = document.getElementById('device-grid');
+  grid.addEventListener('dragover', (e) => {
+    const dragging = grid.querySelector('.dragging');
+    if (!dragging) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const after = getDragAfterElement(grid, e.clientX, e.clientY);
+    if (after == null) grid.appendChild(dragging);
+    else if (after !== dragging) grid.insertBefore(dragging, after);
+  });
+  grid.addEventListener('drop', (e) => e.preventDefault());
+}
+
+// First card whose center sits after the pointer in row-major order; null => append last.
+function getDragAfterElement(container, x, y) {
+  const els = [...container.querySelectorAll('.device-card:not(.dragging)')];
+  for (const el of els) {
+    const b = el.getBoundingClientRect();
+    const cx = b.left + b.width / 2;
+    const cy = b.top + b.height / 2;
+    if (y < cy - 4 || (Math.abs(y - cy) <= b.height / 2 && x < cx)) return el;
+  }
+  return null;
+}
+
+async function persistCardOrder() {
+  const grid = document.getElementById('device-grid');
+  const order = [...grid.querySelectorAll('.device-card')].map((c) => c.dataset.id);
+  order.forEach((id, i) => { if (state.saved[id]) state.saved[id].order = i; });
+  await window.batteryHub.reorderDevices(order);
+}
+
+// One delegated handler closes any open card menu on an outside click. Registered
+// once at module scope: doing this per card inside buildDeviceCard added a document
+// listener for every card on every dashboard refresh and never removed them, so they
+// accumulated for the life of the session and pinned the detached cards in memory.
+document.addEventListener('click', () => {
+  document.querySelectorAll('.menu-dropdown').forEach((d) => { d.hidden = true; });
+});
+
+function buildDeviceCard(dev) {
+  const tpl = document.getElementById('device-card-template');
+  const el = tpl.content.firstElementChild.cloneNode(true);
+
+  el.dataset.id = dev.id;
+  el.draggable = currentSettings.sortMode === 'manual';
+  el.tabIndex = 0;
+  el.setAttribute('aria-haspopup', 'dialog');
+  el.setAttribute('aria-label', `${dev.customName || dev.product || 'Device'}: open details`);
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('button, input, .device-type-icon, .menu-dropdown, .icon-picker')) return;
+    if (document.querySelector('.menu-dropdown:not([hidden]), .icon-picker')) return; // this click just dismisses them
+    openDetail(dev.id);
+  });
+  el.addEventListener('keydown', (e) => {
+    if (e.target !== el || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    openDetail(dev.id);
+  });
+  let pressedControl = false;
+  el.addEventListener('pointerdown', (e) => {
+    pressedControl = !!e.target.closest('button, input, .device-type-icon, .menu-dropdown');
+  });
+  el.addEventListener('dragstart', (e) => {
+    if (pressedControl) { e.preventDefault(); return; }
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dev.id); } catch (_) {}
+    // Apply the hidden-source style only AFTER the browser has snapshotted the drag
+    // image, otherwise the card you're dragging would be hidden too. This leaves just the
+    // drag image floating and a clean gap at the origin (no half-opacity duplicate).
+    setTimeout(() => el.classList.add('dragging'), 0);
+  });
+  el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    persistCardOrder();
+  });
+
+  el.querySelector('.device-name').textContent = dev.customName || dev.product || 'Device';
+  paintDeviceIcon(el.querySelector('.device-type-icon'), dev);
+
+  const menuBtn = el.querySelector('.menu-btn');
+  const dropdown = el.querySelector('.menu-dropdown');
+  const recalBtn = el.querySelector('.menu-recalibrate');
+  // A hand-calibrated (generic) device is recalibrated. A supported one can be set up with a scan
+  // too: its Add device row only offers Add, and when its built-in reading fails, the scan is how its
+  // owner sends the bytes that fix it (issue #92). Windows-read devices have nothing to scan.
+  if (dev.driverId === 'system') recalBtn.remove();
+  else if (dev.driverId !== 'generic') recalBtn.textContent = 'Set up';
+
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.icon-picker').forEach((p) => p.remove()); // close any open icon picker
+    document.querySelectorAll('.menu-dropdown').forEach((d) => { if (d !== dropdown) d.hidden = true; });
+    dropdown.hidden = !dropdown.hidden;
+  });
+  el.querySelector('.menu-refresh').addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.hidden = true;
+    triggerRefresh();
+  });
+  el.querySelector('.menu-rename').addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.hidden = true;
+    startRename(card, dev);
+  });
+  // Change the icon by clicking the icon itself (no longer a ⋯ menu item).
+  const typeIcon = el.querySelector('.device-type-icon');
+  typeIcon.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.hidden = true;
+    openIconPicker(card, dev);
+  });
+  // Hide keeps the device (and its calibration) but stops polling and tray icons.
+  // Hidden devices are listed under the grid so they can be restored.
+  const hideBtn = el.querySelector('.menu-hide');
+  hideBtn.textContent = dev.hidden ? 'Unhide' : 'Hide';
+  hideBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    dropdown.hidden = true;
+    await window.batteryHub.setDeviceHidden(dev.id, !dev.hidden);
+    refreshDashboard();
+  });
+  el.querySelector('.menu-remove').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await window.batteryHub.removeDevice(dev.id);
+    refreshDashboard();
+  });
+  if (recalBtn.isConnected) {
+    recalBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      dropdown.hidden = true;
+      await startCalibration(dev.id, dev.product, dev.manufacturer);
+    });
+  }
+
+  const gaugeFill = el.querySelector('.gauge-fill');
+  gaugeFill.style.strokeDasharray = `${GAUGE_CIRCUMFERENCE}`;
+
+  const card = {
+    el,
+    gaugeFill,
+    gaugeWrap: el.querySelector('.gauge-wrap'),
+    pctLabel: el.querySelector('.gauge-pct'),
+    bolt: el.querySelector('.gauge-bolt'),
+    subEl: el.querySelector('.device-sub'),
+    estimateEl: el.querySelector('.device-estimate'),
+    sparkWrap: el.querySelector('.sparkline'),
+    sparkLine: el.querySelector('.spark-line'),
+    lastPct: null,
+  };
+  applyReading(card, dev);
+  return card;
+}
+
+// Status colors for the percentage text. The ring itself uses the gradients in index.html.
+function gaugeStyleFor(pct, charging, offline) {
+  if (offline) return { stroke: 'var(--text-tertiary)', text: 'var(--text-tertiary)' };
+  if (charging) return { stroke: 'var(--level-high)', text: 'var(--level-high)' };
+  if (pct <= 20) return { stroke: 'var(--level-low)', text: 'var(--level-low)' };
+  if (pct <= 45) return { stroke: 'var(--level-mid)', text: 'var(--level-mid)' };
+  return { stroke: 'var(--level-high)', text: 'var(--level-high)' };
+}
+
+function animatePct(card, to) {
+  const from = card.lastPct;
+  card.lastPct = to;
+  if (from == null || from === to) {
+    card.pctLabel.textContent = `${to}%`;
+    return;
+  }
+  const start = performance.now();
+  const dur = 600;
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / dur);
+    const eased = 1 - Math.pow(1 - k, 3);
+    card.pctLabel.textContent = `${Math.round(from + (to - from) * eased)}%`;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+const READS_BEFORE_REPORT = 3;
+
+function applyReading(card, dev) {
+  const reading = dev.lastReading;
+  const pct = reading ? reading.capacity : null;
+  const offline = dev.online === false;
+  const charging = !!(reading && reading.charging) && !offline;
+
+  card.el.classList.toggle('offline', offline);
+  card.el.classList.toggle('charging', charging);
+  card.pctLabel.classList.remove('small');
+
+  if (pct == null) {
+    card.lastPct = null;
+    card.pctLabel.textContent = offline ? 'off' : '…';
+    card.pctLabel.classList.add('small');
+    card.gaugeFill.style.strokeDashoffset = `${GAUGE_CIRCUMFERENCE}`;
+  } else {
+    animatePct(card, pct);
+    const offset = GAUGE_CIRCUMFERENCE * (1 - pct / 100);
+    card.gaugeFill.style.strokeDashoffset = `${offset}`;
+    const style = gaugeStyleFor(pct, charging, offline);
+    card.gaugeFill.style.stroke = style.stroke;
+    card.pctLabel.style.setProperty('--pct-color', style.text);
+  }
+
+  card.bolt.classList.toggle('show', charging);
+
+  // Keep showing the last known value with a friendly status; only surface an error
+  // if we have never gotten a reading.
+  let sub;
+  if (offline) {
+    sub = offLabel(dev) || 'Not connected';
+  } else if (dev.failedReads >= READS_BEFORE_REPORT) {
+    sub = "Can't read this device. Click for help";
+  } else if (reading) {
+    sub = `Updated ${timeAgo(dev.lastReadingAt)}`;
+  } else if (dev.lastError && /waiting/i.test(dev.lastError)) {
+    sub = 'Waiting for update…';
+  } else if (dev.lastError && /cannot write|write to hid/i.test(dev.lastError)) {
+    sub = "Can't read this device's battery";
+  } else {
+    sub = dev.lastError || 'Waiting…';
+  }
+  card.subEl.textContent = sub;
+
+  renderHistory(card, dev, charging, offline);
+}
+
+if (window.batteryHub.onDevicesChanged) window.batteryHub.onDevicesChanged(() => refreshDashboard());
+
+window.batteryHub.onBatteryUpdate((dev) => {
+  state.saved[dev.id] = dev;
+  const card = state.cardEls.get(dev.id);
+  if (card) applyReading(card, dev);
+  resortCards();
+  updateDetail(dev.id);
+});
+
+async function triggerRefresh() {
+  const btn = document.getElementById('refresh-btn');
+  if (btn.classList.contains('spinning')) return;
+  btn.classList.add('spinning');
+  try {
+    await window.batteryHub.pollNow();
+  } finally {
+    setTimeout(() => btn.classList.remove('spinning'), 500);
+  }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', triggerRefresh);
+
+// ---------- discover ----------
+
+async function refreshDiscover() {
+  const [live, saved] = await Promise.all([
+    window.batteryHub.listLiveDevices(),
+    window.batteryHub.listSavedDevices(),
+  ]);
+  state.live = live;
+  const list = document.getElementById('discover-list');
+  list.innerHTML = '';
+
+  const unadded = live.filter((d) => !saved[d.id]);
+  if (unadded.length === 0) {
+    list.innerHTML = '<div class="empty-state"><p class="empty-title">No new devices</p><p class="empty-desc">Plug something in and hit Rescan.</p></div>';
+    return;
+  }
+
+  for (const d of unadded) {
+    const row = document.createElement('div');
+    row.className = 'list-item';
+    const badge = d.suggestedDriver ? '<span class="badge">Supported</span>' : '';
+    row.innerHTML = `
+      <div class="list-item-main">
+        <span class="list-item-emoji">${iconSvg(iconFor(d.product, d.suggestedDriver))}</span>
+        <div class="list-item-info">
+          <div class="list-item-title"><span data-no-translate>${escapeHtml(d.product)}</span>${badge}</div>
+          <div class="list-item-sub">${escapeHtml(d.manufacturer || 'Unknown manufacturer')}${d.channelCount ? ` · ${d.channelCount} channel${d.channelCount === 1 ? '' : 's'}` : ''}</div>
+        </div>
+      </div>
+    `;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = d.suggestedDriver ? 'Add' : 'Set up';
+    btn.addEventListener('click', async () => {
+      if (d.suggestedDriver) {
+        btn.disabled = true;
+        btn.textContent = 'Adding…';
+        await window.batteryHub.addDevice({
+          id: d.id,
+          driverId: d.suggestedDriver,
+          profile: null,
+          product: d.product,
+          manufacturer: d.manufacturer,
+        });
+        switchView('dashboard');
+      } else {
+        await startCalibration(d.id, d.product, d.manufacturer);
+      }
+    });
+    row.appendChild(btn);
+    list.appendChild(row);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// The icon turns while the list is fetched, at least long enough to be seen.
+async function triggerRescan() {
+  const btn = document.getElementById('rescan-btn');
+  if (btn.classList.contains('spinning')) return;
+  btn.classList.add('spinning');
+  const shown = new Promise((r) => setTimeout(r, 600));
+  try {
+    await refreshDiscover();
+  } finally {
+    await shown;
+    btn.classList.remove('spinning');
+  }
+}
+
+document.getElementById('rescan-btn').addEventListener('click', triggerRescan);
+
+// ---------- calibration wizard ----------
+
+async function startCalibration(id, product, manufacturer) {
+  state.calibration = { id, product, manufacturer, frames: [], selected: null };
+  switchView('calibrate');
+  document.getElementById('calibrate-title').textContent = `Set up ${product}`;
+  const body = document.getElementById('calibrate-body');
+  body.innerHTML = `
+    <div class="step-card">
+      <div class="step-title">1. Scan the device</div>
+      <div class="step-desc">
+        The scan takes 30 seconds. While it runs, turn the device off and on once or twice, because
+        many devices only report their battery at power on. If the device has its own app, keep it open.
+      </div>
+      <button class="btn btn-primary" id="start-capture-btn">Start scan</button>
+    </div>
+    <div id="capture-results"></div>
+    <div id="scan-report"></div>
+  `;
+  document.getElementById('start-capture-btn').addEventListener('click', runCapture);
+  offerScanReport(state.calibration);
+}
+
+const SCAN_SECONDS = 30;
+
+async function runCapture() {
+  const btn = document.getElementById('start-capture-btn');
+  const results = document.getElementById('capture-results');
+  btn.disabled = true;
+  btn.textContent = 'Scanning…';
+  document.getElementById('scan-report').replaceChildren();
+
+  // Live countdown + progress bar while the (30s) scan runs.
+  results.innerHTML = `
+    <div class="step-card scan-live">
+      <div class="scan-live-head">
+        <span class="spinner"></span>
+        <span>Turn your device off and on now</span>
+      </div>
+      <div class="scan-progress"><div class="scan-bar" id="scan-bar"></div></div>
+      <div class="scan-foot">
+        <div class="scan-remaining"><span id="scan-timer">${SCAN_SECONDS}</span>s remaining</div>
+        <button class="btn btn-ghost" id="cancel-capture-btn">Cancel</button>
+      </div>
+    </div>
+  `;
+  let cancelled = false;
+  const cancelBtn = document.getElementById('cancel-capture-btn');
+  cancelBtn.addEventListener('click', () => {
+    cancelled = true;
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = 'Cancelling…';
+    window.batteryHub.cancelCapture().catch(() => {});
+  });
+  const bar = document.getElementById('scan-bar');
+  const timerEl = document.getElementById('scan-timer');
+  const startedAt = Date.now();
+  const ticker = setInterval(() => {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    const remaining = Math.max(0, SCAN_SECONDS - elapsed);
+    if (timerEl) timerEl.textContent = Math.ceil(remaining);
+    if (bar) bar.style.width = `${Math.min(100, (elapsed / SCAN_SECONDS) * 100)}%`;
+  }, 100);
+
+  let frames = [];
+  try {
+    frames = await window.batteryHub.capture(state.calibration.id);
+  } catch (e) {
+    clearInterval(ticker);
+    const message = plainError(e);
+    results.innerHTML = `<div class="step-card"><div class="step-desc">Scan failed: ${escapeHtml(message)}</div></div>`;
+    btn.disabled = false;
+    btn.textContent = 'Scan again';
+    noteScan(state.calibration, [], message);
+    return;
+  }
+
+  clearInterval(ticker);
+  btn.disabled = false;
+  if (cancelled) {
+    // Nothing is shown or reported from a scan the user stopped: it may have missed the frame.
+    btn.textContent = 'Start scan';
+    results.innerHTML = '<div class="step-card"><div class="step-desc">Scan cancelled.</div></div>';
+    return;
+  }
+  btn.textContent = 'Scan again';
+  state.calibration.frames = frames;
+  renderCaptureResults();
+  noteScan(state.calibration, frames, null);
+}
+
+function renderCaptureResults() {
+  const { frames } = state.calibration;
+  const container = document.getElementById('capture-results');
+
+  if (frames.length === 0) {
+    container.innerHTML = `<div class="step-card"><div class="step-desc">No signal captured. Make sure the device (or its USB receiver) is connected, then run the scan again — and this time <b>turn the device off and back on</b> a couple of times while it scans.</div></div>`;
+    return;
+  }
+
+  const rows = frames.map((f, idx) => {
+    const cells = f.bytes.map((b, byteIdx) =>
+      `<div class="byte-cell" data-frame="${idx}" data-byte="${byteIdx}">${b}</div>`
+    ).join('');
+    return `
+      <div class="frame-row">
+        <div class="frame-row-head">Channel 0x${f.usagePage.toString(16)}, ${f.reportKind} report ${f.reportId}, seen ${f.count} times</div>
+        <div class="byte-grid">${cells}</div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="step-card">
+      <div class="step-title">2. Pick the battery value</div>
+      <div class="step-desc">
+        Each row is a message from the device. Click the number that matches its battery level,
+        usually a value from 0 to 100.
+      </div>
+      <div class="frame-table">${rows}</div>
+    </div>
+    <div class="step-card" id="calibrate-form-card" hidden>
+      <div class="step-title">3. Confirm</div>
+      <div class="calibrate-form">
+        <div class="form-row">
+          <label>Selected value</label>
+          <span id="raw-value-display" style="font-weight:700"></span>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="passthrough-check" checked />
+          <label for="passthrough-check">This number is the battery percentage</label>
+        </div>
+        <div class="form-row" id="known-pct-row" hidden>
+          <label>Battery level shown in the device's own app</label>
+          <input type="number" id="known-pct-input" min="1" max="100" value="100" />
+        </div>
+        <button class="btn btn-primary" id="save-calibration-btn">Save and add</button>
+      </div>
+    </div>
+  `;
+
+  container.querySelectorAll('.byte-cell').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      container.querySelectorAll('.byte-cell').forEach((c) => c.classList.remove('selected'));
+      cell.classList.add('selected');
+      const frameIdx = Number(cell.dataset.frame);
+      const byteIdx = Number(cell.dataset.byte);
+      state.calibration.selected = { frameIdx, byteIdx };
+      const raw = frames[frameIdx].bytes[byteIdx];
+      document.getElementById('calibrate-form-card').hidden = false;
+      document.getElementById('raw-value-display').textContent = raw;
+    });
+  });
+
+  document.getElementById('passthrough-check').addEventListener('change', (e) => {
+    document.getElementById('known-pct-row').hidden = e.target.checked;
+  });
+
+  document.getElementById('save-calibration-btn').addEventListener('click', async (e) => {
+    const { frameIdx, byteIdx } = state.calibration.selected;
+    const frame = frames[frameIdx];
+    const raw = frame.bytes[byteIdx];
+    const isPassthrough = document.getElementById('passthrough-check').checked;
+    const knownPct = Number(document.getElementById('known-pct-input').value) || 100;
+
+    let scaleMin = 0;
+    let scaleMax = 100;
+    if (!isPassthrough) {
+      scaleMax = knownPct > 0 ? Math.round((raw * 100) / knownPct) : raw;
+    }
+
+    const profile = {
+      usagePage: frame.usagePage,
+      usage: frame.usage,
+      reportKind: frame.reportKind,
+      reportId: frame.reportId,
+      readLength: frame.bytes.length,
+      trigger: frame.reportKind === 'input' ? Array(frame.bytes.length).fill(0) : null,
+      byteOffset: byteIdx,
+      scaleMin,
+      scaleMax,
+    };
+
+    e.target.disabled = true;
+    e.target.textContent = 'Saving…';
+    await window.batteryHub.addDevice({
+      id: state.calibration.id,
+      driverId: 'generic',
+      profile,
+      product: state.calibration.product,
+      manufacturer: state.calibration.manufacturer,
+    });
+    switchView('dashboard');
+  });
+}
+
+document.getElementById('calibrate-back').addEventListener('click', () => switchView('discover'));
+
+// ---------- rename ----------
+
+function startRename(card, dev) {
+  const nameEl = card.el.querySelector('.device-name');
+  if (!nameEl || nameEl.tagName === 'INPUT') return;
+  card.el.draggable = false; // let the text field take focus/selection while editing
+  const input = document.createElement('input');
+  input.className = 'name-edit';
+  input.value = dev.customName || dev.product || '';
+  input.maxLength = 40;
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = async (save) => {
+    if (done) return;
+    done = true;
+    if (save) await window.batteryHub.renameDevice(dev.id, input.value.trim());
+    refreshDashboard();
+  };
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
+    else if (ev.key === 'Escape') commit(false);
+  });
+  input.addEventListener('blur', () => commit(true));
+  input.addEventListener('click', (ev) => ev.stopPropagation());
+}
+
+// ---------- change icon ----------
+
+// Picking one stores a customIcon override; "Auto" clears it and falls back to iconFor().
+const ICON_CHOICES = [['mouse', 'Mouse'], ['keyboard', 'Keyboard'], ['headset', 'Headset'], ['mic', 'Microphone'], ['speaker', 'Speaker'], ['camera', 'Camera'], ['controller', 'Controller'], ['pen', 'Pen']];
+
+function openIconPicker(card, dev) {
+  document.querySelectorAll('.icon-picker').forEach((p) => p.remove()); // one at a time
+
+  const pop = document.createElement('div');
+  pop.className = 'icon-picker';
+  pop.addEventListener('click', (e) => e.stopPropagation());
+
+  const head = document.createElement('div');
+  head.className = 'icon-picker-head';
+  const title = document.createElement('span');
+  title.textContent = 'Choose an icon';
+  const auto = document.createElement('button');
+  auto.className = 'icon-picker-auto';
+  auto.textContent = 'Auto';
+  if (!dev.customIcon) auto.classList.add('selected');
+  auto.addEventListener('click', () => applyDeviceIcon(card, dev, null, pop));
+  head.append(title, auto);
+
+  const grid = document.createElement('div');
+  grid.className = 'icon-picker-grid';
+  for (const [name, label] of ICON_CHOICES) {
+    const b = document.createElement('button');
+    b.className = 'icon-choice';
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = iconSvg(name);
+    if (dev.customIcon && deviceIconName(dev) === name) b.classList.add('selected');
+    b.addEventListener('click', () => applyDeviceIcon(card, dev, name, pop));
+    grid.appendChild(b);
+  }
+
+  pop.append(head, grid);
+  card.el.appendChild(pop);
+
+  // Close on the next outside click (deferred so this opening click doesn't close it).
+  setTimeout(() => {
+    document.addEventListener('click', function onDoc() {
+      pop.remove();
+      document.removeEventListener('click', onDoc);
+    }, { once: true });
+  }, 0);
+}
+
+async function applyDeviceIcon(card, dev, icon, pop) {
+  dev.customIcon = icon || null;
+  paintDeviceIcon(card.el.querySelector('.device-type-icon'), dev);
+  if (pop) pop.remove();
+  await window.batteryHub.setDeviceIcon(dev.id, dev.customIcon);
+}
+
+// ---------- settings ----------
+
+const currentSettings = {};
+
+function applyClientSettings(s) {
+  document.body.classList.toggle('density-compact', s.density === 'compact');
+  document.body.classList.toggle('reduce-motion', !!s.reduceMotion);
+}
+
+function reflectSettingControls(s) {
+  document.querySelectorAll('.toggle[data-setting]').forEach((t) => {
+    t.classList.toggle('on', !!s[t.dataset.setting]);
+  });
+  document.querySelectorAll('.segmented[data-setting]').forEach((seg) => {
+    seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === s[seg.dataset.setting]));
+  });
+  document.querySelectorAll('input[data-setting], select[data-setting]').forEach((inp) => {
+    inp.value = s[inp.dataset.setting];
+  });
+  document.querySelectorAll('.settings-row[data-depends]').forEach((row) => {
+    row.classList.toggle('disabled', !s[row.dataset.depends]);
+  });
+  positionSegThumbs();
+}
+
+// Slide the glass "thumb" of each segmented control to its active option.
+// The CSS transition on .seg-thumb does the springy morph between options.
+// Thumbs are created synchronously; if a control isn't laid out yet (its view is
+// still hidden) we retry shortly so the thumb lands in the right spot when shown.
+function positionSegThumbs(root) {
+  const run = () => {
+    let retry = false;
+    (root || document).querySelectorAll('.segmented').forEach((seg) => {
+      let thumb = seg.querySelector('.seg-thumb');
+      if (!thumb) {
+        thumb = document.createElement('span');
+        thumb.className = 'seg-thumb';
+        seg.insertBefore(thumb, seg.firstChild);
+      }
+      const active = seg.querySelector('button.active');
+      if (!active) { thumb.style.opacity = '0'; return; }
+      if (active.offsetWidth === 0) { thumb.style.opacity = '0'; retry = true; return; }
+      const firstShow = !thumb.dataset.ready;
+      if (firstShow) thumb.style.transition = 'none'; // don't slide in from x=0 on first paint
+      thumb.style.opacity = '1';
+      thumb.style.width = `${active.offsetWidth}px`;
+      thumb.style.transform = `translateX(${active.offsetLeft}px)`;
+      if (firstShow) {
+        void thumb.offsetWidth; // flush, then restore the springy transition
+        thumb.style.transition = '';
+        thumb.dataset.ready = '1';
+      }
+      thumb.classList.add('armed');
+    });
+    if (retry) setTimeout(run, 40);
+  };
+  run();
+}
+window.addEventListener('resize', () => positionSegThumbs());
+
+async function updateSetting(key, value) {
+  const s = await window.batteryHub.setSettings({ [key]: value });
+  Object.assign(currentSettings, s);
+  applyClientSettings(s);
+  reflectSettingControls(s);
+  if (key === 'sortMode') refreshDashboard();
+}
+
+function wireSettingsControls() {
+  document.querySelectorAll('.toggle[data-setting]').forEach((t) => {
+    t.addEventListener('click', () => updateSetting(t.dataset.setting, !currentSettings[t.dataset.setting]));
+  });
+  document.querySelectorAll('.segmented[data-setting] button').forEach((b) => {
+    b.addEventListener('click', () => updateSetting(b.parentElement.dataset.setting, b.dataset.value));
+  });
+  document.querySelectorAll('select[data-setting]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      updateSetting(sel.dataset.setting, sel.value);
+      if (sel.dataset.setting === 'language' && window.bhSetLanguage) window.bhSetLanguage(sel.value);
+    });
+  });
+  document.querySelectorAll('input[data-setting]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      let v = Number(inp.value);
+      const min = Number(inp.min);
+      const max = Number(inp.max);
+      if (Number.isNaN(v)) v = min;
+      v = Math.max(min, Math.min(max, v));
+      inp.value = v;
+      updateSetting(inp.dataset.setting, v);
+    });
+  });
+  const quitBtn = document.getElementById('quit-app-btn');
+  if (quitBtn) quitBtn.addEventListener('click', () => window.batteryHub.quitApp && window.batteryHub.quitApp());
+}
+
+// Personal test panel. Only appears when the git-ignored src/main/local-tools.js is present, so
+// it exists in local builds and never in a release.
+async function initLocalTools() {
+  const tools = window.batteryHub.localTools && await window.batteryHub.localTools();
+  if (!tools) return;
+  const host = document.getElementById('local-tools');
+  const title = document.createElement('div');
+  title.className = 'settings-group-title';
+  title.textContent = 'Notification test (this PC only)';
+  const panel = document.createElement('div');
+  panel.className = 'settings-panel';
+  for (const tool of tools) {
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    const label = document.createElement('div');
+    label.className = 'settings-label';
+    const name = document.createElement('span');
+    name.className = 'settings-title';
+    name.textContent = tool.title;
+    const hint = document.createElement('span');
+    hint.className = 'settings-hint';
+    hint.textContent = tool.hint;
+    label.append(name, hint);
+    const send = document.createElement('button');
+    send.className = 'btn btn-ghost';
+    send.textContent = tool.action;
+    send.addEventListener('click', () => window.batteryHub.runLocalTool(tool.id));
+    row.append(label, send);
+    panel.append(row);
+  }
+  host.append(title, panel);
+}
+
+async function loadSettings() {
+  const s = await window.batteryHub.getSettings();
+  Object.assign(currentSettings, s);
+  applyClientSettings(s);
+  reflectSettingControls(s);
+}
+
+async function refreshSettings() {
+  await loadSettings();
+}
+
+// ---------- about / updates ----------
+
+// A downloaded update is announced on the Devices page too, not only in Settings. "Later" hides it
+// for this window; it comes back when the window is opened again.
+let updateBannerDismissed = false;
+function showUpdateBanner(version) {
+  const banner = document.getElementById('update-banner');
+  if (!banner || updateBannerDismissed) return;
+  document.getElementById('update-banner-title').textContent = `Update ready: v${version}`;
+  document.getElementById('update-banner-install').onclick = () => window.batteryHub.installUpdate();
+  document.getElementById('update-banner-later').onclick = () => { updateBannerDismissed = true; banner.hidden = true; };
+  banner.hidden = false;
+}
+
+async function initAbout() {
+  const versionEl = document.getElementById('app-version');
+  if (versionEl && window.batteryHub.getVersion) {
+    try { versionEl.textContent = `Version ${await window.batteryHub.getVersion()}`; } catch (_) {}
+  }
+
+  const btn = document.getElementById('check-updates-btn');
+  const row = document.getElementById('update-status-row');
+  const titleEl = document.getElementById('update-status-title');
+  const hintEl = document.getElementById('update-status-hint');
+  const installBtn = document.getElementById('install-update-btn');
+  if (!btn || !window.batteryHub.checkForUpdates) return;
+
+  let manual = false; // whether the in-flight check was user-initiated (verbose vs quiet)
+
+  const show = (title, hint, showInstall) => {
+    row.hidden = false;
+    titleEl.textContent = title;
+    hintEl.textContent = hint || '';
+    installBtn.hidden = !showInstall;
+  };
+  const hideRow = () => { row.hidden = true; installBtn.hidden = true; };
+  const resetBtn = () => { btn.disabled = false; btn.textContent = 'Check for updates'; };
+
+  // Real update progress arrives asynchronously from electron-updater via this channel.
+  if (window.batteryHub.onUpdateEvent) {
+    window.batteryHub.onUpdateEvent((e) => {
+      switch (e.status) {
+        case 'checking': if (manual) show('Checking for updates…', ''); break;
+        case 'available': show(`Update available: v${e.version}`, 'Downloading in the background…', false); break;
+        case 'downloading': show('Downloading update…', `${e.percent}%`, false); break;
+        case 'downloaded':
+          show(`Update ready: v${e.version}`, 'Restart to finish installing.', true);
+          installBtn.onclick = () => window.batteryHub.installUpdate();
+          showUpdateBanner(e.version);
+          break;
+        case 'not-available': manual ? show("You're up to date", 'You have the latest version.', false) : hideRow(); break;
+        case 'error': manual ? show("Couldn't check for updates", e.message || '', false) : hideRow(); break;
+      }
+      resetBtn();
+    });
+  }
+
+  // The Download/Restart button only ever appears when an update is downloaded (i.e. you're
+  // not up to date). When up to date, the row stays hidden on the automatic check.
+  async function runCheck(isManual) {
+    manual = isManual;
+    if (isManual) { btn.disabled = true; btn.textContent = 'Checking…'; show('Checking for updates…', ''); installBtn.hidden = true; }
+    let r;
+    try { r = await window.batteryHub.checkForUpdates(); }
+    catch (e) { r = { status: 'error', message: e.message }; }
+    if (r && r.status === 'dev') { if (isManual) show('Updates run automatically in the installed app', `v${r.version}`, false); resetBtn(); }
+    else if (r && r.status === 'error') { if (isManual) show("Couldn't check for updates", r.message || '', false); resetBtn(); }
+    // 'checking' -> real result comes through onUpdateEvent
+  }
+
+  btn.addEventListener('click', () => runCheck(true));
+  runCheck(false); // silent auto-check on load
+}
+
+// ---------- boot ----------
+
+// Keep the "Updated Xs ago" labels ticking between polls.
+setInterval(() => {
+  for (const [id, card] of state.cardEls) {
+    const dev = state.saved[id];
+    if (dev) applyReading(card, dev);
+  }
+}, 15000);
+
+(async () => {
+  wireSettingsControls();
+  wireGridDnd();
+  initAbout();
+  await loadSettings();
+  await refreshDashboard();
+  initLocalTools();
+})();
