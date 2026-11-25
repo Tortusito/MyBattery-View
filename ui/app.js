@@ -2,7 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 const CATEGORY_ORDER = ['headphones', 'mouse', 'keyboard', 'gamepad', 'generic'];
-const CURRENT_VERSION = '1.0.5';
+const CURRENT_VERSION = '1.0.6';
 
 let settings = {};
 let devices = [];
@@ -156,21 +156,25 @@ document.getElementById('check-updates-btn').addEventListener('click', async () 
 });
 
 (async () => {
-  settings = await invoke('get_settings');
-  applyAppearance(settings);
-  reflectControls(settings);
-
-  devices = await invoke('get_devices');
-  renderDevices();
-
-  await listen('devices-updated', (e) => {
-    devices = e.payload || [];
-    renderDevices();
-  });
-  await listen('settings-updated', (e) => {
-    settings = e.payload || settings;
+  try {
+    settings = await invoke('get_settings');
     applyAppearance(settings);
     reflectControls(settings);
+
+    devices = await invoke('get_devices');
     renderDevices();
-  });
+
+    await listen('devices-updated', (e) => {
+      devices = e.payload || [];
+      renderDevices();
+    });
+    await listen('settings-updated', (e) => {
+      settings = e.payload || settings;
+      applyAppearance(settings);
+      reflectControls(settings);
+      renderDevices();
+    });
+  } catch (err) {
+    console.error('Init error:', err);
+  }
 })();

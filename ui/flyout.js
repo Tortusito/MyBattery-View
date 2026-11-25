@@ -66,18 +66,22 @@ document.getElementById('open-btn').addEventListener('click', () => invoke('open
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') invoke('hide_flyout'); });
 
 (async () => {
-  settings = await invoke('get_settings');
-  applyAppearance(settings);
-  devices = await invoke('get_devices');
-  render();
-
-  await listen('devices-updated', (e) => {
-    devices = e.payload || [];
-    render();
-  });
-  await listen('settings-updated', (e) => {
-    settings = e.payload || settings;
+  try {
+    settings = await invoke('get_settings');
     applyAppearance(settings);
+    devices = await invoke('get_devices');
     render();
-  });
+
+    await listen('devices-updated', (e) => {
+      devices = e.payload || [];
+      render();
+    });
+    await listen('settings-updated', (e) => {
+      settings = e.payload || settings;
+      applyAppearance(settings);
+      render();
+    });
+  } catch (err) {
+    console.error('Flyout init error:', err);
+  }
 })();

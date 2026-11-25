@@ -145,9 +145,7 @@ fn toggle_flyout(app: &AppHandle, device_count: usize, pos_x: f64, pos_y: f64) {
 
 fn main() {
     let initial_settings = load_settings();
-    let initial_devices = collect_all_devices();
-
-    let devices_arc = Arc::new(Mutex::new(initial_devices.clone()));
+    let devices_arc = Arc::new(Mutex::new(Vec::<BatteryDevice>::new()));
     let settings_arc = Arc::new(Mutex::new(initial_settings));
 
     tauri::Builder::default()
@@ -211,7 +209,7 @@ fn main() {
                 })
                 .build(app)?;
 
-            update_tray_tooltip(app.handle(), &initial_devices);
+            update_tray_tooltip(app.handle(), &[]);
 
             if let Some(flyout) = app.get_webview_window("flyout") {
                 let flyout_clone = flyout.clone();
@@ -224,6 +222,13 @@ fn main() {
 
             let app_handle = app.handle().clone();
             std::thread::spawn(move || loop {
+                let list = collect_all_devices();
+                if let Ok(mut guard) = app_handle.state::<AppState>().devices.lock() {
+                    *guard = list.clone();
+                }
+                update_tray_tooltip(&app_handle, &list);
+                let _ = app_handle.emit("devices-updated", &list);
+
                 let interval = app_handle
                     .state::<AppState>()
                     .settings
@@ -231,13 +236,6 @@ fn main() {
                     .map(|s| s.poll_interval_sec.max(10))
                     .unwrap_or(30);
                 std::thread::sleep(Duration::from_secs(interval));
-
-                let list = collect_all_devices();
-                if let Ok(mut guard) = app_handle.state::<AppState>().devices.lock() {
-                    *guard = list.clone();
-                }
-                update_tray_tooltip(&app_handle, &list);
-                let _ = app_handle.emit("devices-updated", &list);
             });
 
             Ok(())
