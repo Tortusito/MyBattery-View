@@ -18,13 +18,17 @@ function applyAppearance(s) {
 
 function render() {
   const rows = document.getElementById('rows');
-  if (!devices.length) {
+  const hiddenSet = new Set(settings.hiddenDevices || []);
+  const visible = devices.filter((d) => !hiddenSet.has(d.id));
+
+  if (!visible.length) {
     rows.innerHTML = '<p class="empty">Sin dispositivos con batería detectados.</p>';
     return;
   }
 
-  rows.replaceChildren(...devices.slice(0, 6).map((d) => {
+  rows.replaceChildren(...visible.slice(0, 6).map((d) => {
     const cat = (settings.customIcons && settings.customIcons[d.id]) || d.category || 'generic';
+    const displayName = (settings.customNames && settings.customNames[d.id]) || d.name;
     const tone = d.percent <= 15 ? 'bad' : d.percent <= 30 ? 'warn' : 'ok';
 
     const el = document.createElement('div');
@@ -38,7 +42,7 @@ function render() {
     const body = document.createElement('div');
     const name = document.createElement('div');
     name.className = 'name';
-    name.textContent = d.name;
+    name.textContent = displayName;
 
     const track = document.createElement('div');
     track.className = 'track';

@@ -13,6 +13,8 @@ pub struct AppSettings {
     pub notify_threshold: u8,
     pub launch_at_login: bool,
     pub custom_icons: HashMap<String, String>,
+    pub custom_names: HashMap<String, String>,
+    pub hidden_devices: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -24,8 +26,10 @@ impl Default for AppSettings {
             poll_interval_sec: 30,
             notify_low: true,
             notify_threshold: 20,
-            launch_at_login: is_startup_enabled(),
+            launch_at_login: true,
             custom_icons: HashMap::new(),
+            custom_names: HashMap::new(),
+            hidden_devices: Vec::new(),
         }
     }
 }
@@ -47,7 +51,10 @@ fn settings_path() -> PathBuf {
 pub fn load_settings() -> AppSettings {
     let path = settings_path();
     let Ok(raw) = std::fs::read_to_string(&path) else {
-        return AppSettings::default();
+        // First run: enable autostart by default and persist initial settings
+        let defaults = AppSettings::default();
+        save_settings(&defaults);
+        return defaults;
     };
     let mut s: AppSettings = serde_json::from_str(&raw).unwrap_or_default();
     s.launch_at_login = is_startup_enabled();
@@ -120,7 +127,7 @@ pub fn set_startup_enabled(enable: bool) {
 
         if enable {
             if let Ok(exe) = std::env::current_exe() {
-                let val = format!("\"{}\"", exe.display());
+                let val = format!("\"{}\" --minimized", exe.display());
                 let mut wide: Vec<u16> = val.encode_utf16().collect();
                 wide.push(0);
                 let bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);

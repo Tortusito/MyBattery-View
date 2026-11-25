@@ -65,6 +65,67 @@ fn set_device_icon(app: AppHandle, state: State<AppState>, id: String, icon: Str
 }
 
 #[tauri::command]
+fn set_device_name(app: AppHandle, state: State<AppState>, id: String, name: String) -> AppSettings {
+    let updated = {
+        let mut guard = state.settings.lock().unwrap();
+        let trimmed = name.trim().to_string();
+        if trimmed.is_empty() {
+            guard.custom_names.remove(&id);
+        } else {
+            guard.custom_names.insert(id, trimmed);
+        }
+        save_settings(&guard);
+        guard.clone()
+    };
+    let _ = app.emit("settings-updated", &updated);
+    updated
+}
+
+#[tauri::command]
+fn toggle_hide_device(app: AppHandle, state: State<AppState>, id: String) -> AppSettings {
+    let updated = {
+        let mut guard = state.settings.lock().unwrap();
+        if let Some(pos) = guard.hidden_devices.iter().position(|x| x == &id) {
+            guard.hidden_devices.remove(pos);
+        } else {
+            guard.hidden_devices.push(id);
+        }
+        save_settings(&guard);
+        guard.clone()
+    };
+    let _ = app.emit("settings-updated", &updated);
+    updated
+}
+
+#[tauri::command]
+fn clear_hidden_devices(app: AppHandle, state: State<AppState>) -> AppSettings {
+    let updated = {
+        let mut guard = state.settings.lock().unwrap();
+        guard.hidden_devices.clear();
+        save_settings(&guard);
+        guard.clone()
+    };
+    let _ = app.emit("settings-updated", &updated);
+    updated
+}
+
+#[tauri::command]
+fn open_external(url: String) {
+    if !url.starts_with("https://github.com/Tortusito/MyBattery-View") {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+}
+
+#[tauri::command]
 fn open_main_window(app: AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -159,11 +220,20 @@ fn main() {
             get_settings,
             save_app_settings,
             set_device_icon,
+            set_device_name,
+            toggle_hide_device,
+            clear_hidden_devices,
+            open_external,
             open_main_window,
             hide_flyout,
             quit_app,
         ])
         .setup(move |app| {
+            if std::env::args().any(|a| a == "--minimized") {
+                if let Some(main_win) = app.get_webview_window("main") {
+                    let _ = main_win.hide();
+                }
+            }
             let open_item = MenuItem::with_id(app, "open", "Abrir MyBattery-View", true, None::<&str>)?;
             let refresh_item = MenuItem::with_id(app, "refresh", "Actualizar ahora", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
