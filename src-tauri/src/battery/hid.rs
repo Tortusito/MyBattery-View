@@ -1,6 +1,6 @@
 use super::{clean_device_name, infer_category, BatteryDevice};
 use std::collections::HashSet;
-use windows::core::{PCWSTR, PWSTR};
+use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
     SetupDiGetDeviceInterfaceDetailW, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT,
@@ -28,7 +28,8 @@ pub fn read_hid_batteries() -> Vec<BatteryDevice> {
     let mut seen_paths = HashSet::new();
 
     unsafe {
-        let hid_guid = HidD_GetHidGuid();
+        let mut hid_guid = windows::core::GUID::default();
+        HidD_GetHidGuid(&mut hid_guid);
         let Ok(dev_info) = SetupDiGetClassDevsW(
             Some(&hid_guid),
             None,

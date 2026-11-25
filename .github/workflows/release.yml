@@ -25,11 +25,16 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+        run: npm install -g @tauri-apps/cli@2
 
       - name: Build Tauri app (NSIS installer + portable exe)
-        run: cargo tauri build
+        run: tauri build
 
       - name: Prepare release assets
         shell: pwsh
