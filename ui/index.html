@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>MyBattery-View</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand-head">
+        <img src="assets/app-icon.png" width="22" height="22" alt="" />
+        <span>MyBattery-View</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-tab="devices">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Dispositivos</span>
+        </button>
+        <button class="nav-btn" data-tab="settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Ajustes</span>
+        </button>
+      </nav>
+      <div class="sidebar-footer">by Wyforce</div>
+    </aside>
+
+    <main class="content">
+      <section id="tab-devices" class="tab active">
+        <header class="page-head">
+          <div>
+            <h1>Tus baterías</h1>
+            <p class="subtitle">Bluetooth, BLE, Wireless HID y mandos Xbox en tiempo real</p>
+          </div>
+          <button id="refresh-btn" class="btn btn-primary">Actualizar</button>
+        </header>
+
+        <div id="device-grid" class="device-grid"></div>
+
+        <div id="empty-state" class="empty-state" hidden>
+          <img class="bot-float" src="assets/watcher.png" width="110" height="110" alt="Wyforce Bot" />
+          <h2>Sin dispositivos detectados</h2>
+          <p>Conecta tus auriculares, ratón, teclado o mando wireless y pulsa Actualizar.</p>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="tab">
+        <header class="page-head">
+          <div>
+            <h1>Ajustes</h1>
+            <p class="subtitle">Apariencia, sistema y actualizaciones</p>
+          </div>
+        </header>
+
+        <div class="settings-card">
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Tema</div>
+              <div class="setting-hint">Sincroniza con Windows o fuerza claro/oscuro.</div>
+            </div>
+            <div class="segmented" data-setting="theme">
+              <button data-value="system">Sistema</button>
+              <button data-value="light">Claro</button>
+              <button data-value="dark">Oscuro</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Color de acento</div>
+              <div class="setting-hint">Personaliza el color principal y nivel alto.</div>
+            </div>
+            <div class="swatches" data-setting="accentColor">
+              <button class="swatch" data-value="wyforce" title="Wyforce" style="--swatch:#943ADE"></button>
+              <button class="swatch" data-value="cyan" title="Cyan" style="--swatch:#00E5FF"></button>
+              <button class="swatch" data-value="emerald" title="Emerald" style="--swatch:#10B981"></button>
+              <button class="swatch" data-value="amber" title="Amber" style="--swatch:#F59E0B"></button>
+              <button class="swatch" data-value="rose" title="Rose" style="--swatch:#F43F5E"></button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Estilo de iconos</div>
+              <div class="setting-hint">Aspecto de los iconos de dispositivos.</div>
+            </div>
+            <div class="segmented" data-setting="iconStyle">
+              <button data-value="line">Línea</button>
+              <button data-value="tinted">Tintado</button>
+              <button data-value="bold">Grueso</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Iniciar con Windows</div>
+              <div class="setting-hint">Abre MyBattery-View automáticamente en segundo plano.</div>
+            </div>
+            <button id="toggle-startup" class="toggle" aria-label="Iniciar con Windows"></button>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-title">Intervalo de lectura</div>
+              <div class="setting-hint">Cada cuántos segundos se actualizan las baterías.</div>
+            </div>
+            <select id="poll-select" class="select">
+              <option value="15">15 s</option>
+              <option value="30">30 s</option>
+              <option value="60">60 s</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-card about-card">
+          <img class="bot-float" src="assets/watcher.png" width="58" height="58" alt="Wyforce Bot" />
+          <div class="about-info">
+            <div class="setting-title">MyBattery-View</div>
+            <div class="setting-hint">v1.0.4 · Motor nativo Rust · by Wyforce</div>
+            <div id="update-msg" class="update-msg"></div>
+          </div>
+          <div class="about-actions">
+            <button id="check-updates-btn" class="btn btn-ghost">Buscar actualizaciones</button>
+            <button id="quit-btn" class="btn btn-danger">Salir</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

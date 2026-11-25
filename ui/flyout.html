@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>MyBattery-View</title>
+  <link rel="stylesheet" href="flyout.css" />
+</head>
+<body>
+  <main class="panel">
+    <header>
+      <h1>Tus baterías</h1>
+      <div class="head-actions">
+        <button id="refresh-btn" title="Actualizar" aria-label="Actualizar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+        </button>
+        <button id="open-btn" title="Abrir MyBattery-View" aria-label="Abrir MyBattery-View">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </button>
+      </div>
+    </header>
+    <div id="rows"></div>
+    <div class="brand">by Wyforce</div>
+  </main>
+  <script src="icons.js"></script>
+  <script src="flyout.js"></script>
+</body>
+</html>

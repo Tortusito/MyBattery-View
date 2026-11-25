@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MyBattery-View",
+  "version": "1.0.4",
+  "identifier": "com.wyforce.mybatteryview",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "MyBattery-View",
+        "url": "index.html",
+        "width": 780,
+        "height": 560,
+        "minWidth": 620,
+        "minHeight": 460,
+        "center": true,
+        "resizable": true,
+        "visible": true
+      },
+      {
+        "label": "flyout",
+        "title": "MyBattery-View Flyout",
+        "url": "flyout.html",
+        "width": 310,
+        "height": 200,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src https://api.github.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

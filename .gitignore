@@ -1,15 +1,2 @@
-# dependencies
-node_modules/
-
-# build output
-dist/
-
-# logs & local scratch
-*.log
-
-# personal test tools, never published
-src/main/local-tools.js
-
-# local editor / tooling config
-.claude/
-src/main/system-batteries.exe
+src-tauri/target/
+.DS_Store
