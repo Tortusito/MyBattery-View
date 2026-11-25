@@ -57,7 +57,7 @@ public sealed class FlyoutForm : Form
         _isRefreshing = isRefreshing;
 
         int rowCount = Math.Max(1, _devices.Count);
-        Height = Math.Min(420, 56 + (rowCount * 54) + 12);
+        Height = Math.Min(440, 56 + (rowCount * 54) + 28);
 
         if (Visible)
         {
@@ -162,60 +162,67 @@ public sealed class FlyoutForm : Form
             var emptyRect = new RectangleF(16, 62, Width - 32, 48);
             var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             g.DrawString("No hay dispositivos Bluetooth con batería detectados.", emptyFont, mutedBrush, emptyRect, sf);
-            return;
         }
-
-        using var nameFont = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-        using var pctFont = new Font("Segoe UI", 9.5f, FontStyle.Bold);
-
-        int y = 56;
-        foreach (var dev in _devices)
+        else
         {
-            var rowRect = new RectangleF(12, y, Width - 24, 46);
-            using (var rowBrush = new SolidBrush(cardBg))
-            using (var rowPath = CreateRoundedRect(rowRect, 8))
+            using var nameFont = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+            using var pctFont = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+
+            int y = 56;
+            foreach (var dev in _devices)
             {
-                g.FillPath(rowBrush, rowPath);
+                var rowRect = new RectangleF(12, y, Width - 24, 46);
+                using (var rowBrush = new SolidBrush(cardBg))
+                using (var rowPath = CreateRoundedRect(rowRect, 8))
+                {
+                    g.FillPath(rowBrush, rowPath);
+                }
+
+                // Category icon
+                DrawCategoryIcon(g, dev.Category, new RectangleF(22, y + 13, 20, 20), textMuted);
+
+                // Device name
+                var nameRect = new RectangleF(50, y + 7, Width - 118, 18);
+                var nameFormat = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                g.DrawString(dev.Name, nameFont, textBrush, nameRect, nameFormat);
+
+                // Percent text
+                Color levelColor = dev.BatteryPercent switch
+                {
+                    <= 20 => Color.FromArgb(239, 68, 68),
+                    <= 45 => Color.FromArgb(245, 158, 11),
+                    _ => Color.FromArgb(34, 197, 94)
+                };
+
+                using var levelBrush = new SolidBrush(levelColor);
+                var pctRect = new RectangleF(Width - 68, y + 7, 46, 18);
+                var pctFormat = new StringFormat { Alignment = StringAlignment.Far };
+                g.DrawString($"{dev.BatteryPercent}%", pctFont, levelBrush, pctRect, pctFormat);
+
+                // Progress bar
+                var barTrack = new RectangleF(50, y + 30, Width - 74, 5);
+                using (var trackBrush = new SolidBrush(trackBg))
+                using (var trackPath = CreateRoundedRect(barTrack, 2.5f))
+                {
+                    g.FillPath(trackBrush, trackPath);
+                }
+
+                float fillWidth = Math.Max(5f, barTrack.Width * (Math.Clamp(dev.BatteryPercent, 0, 100) / 100f));
+                var barFill = new RectangleF(barTrack.X, barTrack.Y, fillWidth, barTrack.Height);
+                using (var fillPath = CreateRoundedRect(barFill, 2.5f))
+                {
+                    g.FillPath(levelBrush, fillPath);
+                }
+
+                y += 54;
             }
-
-            // Category icon
-            DrawCategoryIcon(g, dev.Category, new RectangleF(22, y + 13, 20, 20), textMuted);
-
-            // Device name
-            var nameRect = new RectangleF(50, y + 7, Width - 118, 18);
-            var nameFormat = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-            g.DrawString(dev.Name, nameFont, textBrush, nameRect, nameFormat);
-
-            // Percent text
-            Color levelColor = dev.BatteryPercent switch
-            {
-                <= 20 => Color.FromArgb(239, 68, 68),
-                <= 45 => Color.FromArgb(245, 158, 11),
-                _ => Color.FromArgb(34, 197, 94)
-            };
-
-            using var levelBrush = new SolidBrush(levelColor);
-            var pctRect = new RectangleF(Width - 68, y + 7, 46, 18);
-            var pctFormat = new StringFormat { Alignment = StringAlignment.Far };
-            g.DrawString($"{dev.BatteryPercent}%", pctFont, levelBrush, pctRect, pctFormat);
-
-            // Progress bar
-            var barTrack = new RectangleF(50, y + 30, Width - 74, 5);
-            using (var trackBrush = new SolidBrush(trackBg))
-            using (var trackPath = CreateRoundedRect(barTrack, 2.5f))
-            {
-                g.FillPath(trackBrush, trackPath);
-            }
-
-            float fillWidth = Math.Max(5f, barTrack.Width * (Math.Clamp(dev.BatteryPercent, 0, 100) / 100f));
-            var barFill = new RectangleF(barTrack.X, barTrack.Y, fillWidth, barTrack.Height);
-            using (var fillPath = CreateRoundedRect(barFill, 2.5f))
-            {
-                g.FillPath(levelBrush, fillPath);
-            }
-
-            y += 54;
         }
+
+        // Subtle watermark
+        using var brandFont = new Font("Segoe UI", 7.5f, FontStyle.Regular);
+        var brandRect = new RectangleF(12, Height - 20, Width - 24, 14);
+        var brandFormat = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center };
+        g.DrawString("by Wyforce", brandFont, mutedBrush, brandRect, brandFormat);
     }
 
     private static bool IsAppLightTheme()
