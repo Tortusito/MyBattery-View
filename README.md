@@ -32,7 +32,7 @@ npm run installer
 
 ## Licencia
 
-Distribuido bajo licencia [MIT](LICENSE). Basado en el proyecto open-source [battery-hub](https://github.com/battery-hub/battery-hub).
+Distribuido bajo licencia [MIT](LICENSE).
 
 ---
 
