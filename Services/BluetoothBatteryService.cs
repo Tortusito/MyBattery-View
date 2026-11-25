@@ -38,6 +38,37 @@ public static class BluetoothBatteryService
             // BLE stack may be unavailable if Bluetooth radio is off
         }
 
+        // 3. Standard Wireless / USB HID Battery (2.4 GHz dongles & HID devices)
+        try
+        {
+            foreach (var dev in HidBatteryService.ReadHidBatteries(InferCategory))
+            {
+                var key = NormalizeKey(dev.Name);
+                if (!results.ContainsKey(key))
+                {
+                    results[key] = dev;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore HID enumeration errors
+        }
+
+        // 4. Xbox Wireless / Bluetooth Controllers (XInput)
+        foreach (var dev in XInputBatteryService.ReadXboxControllers())
+        {
+            // Avoid duplicate entry if already reported by Bluetooth PnP as an Xbox controller
+            bool alreadyHasXbox = results.Values.Any(d =>
+                d.Category == DeviceCategory.Gamepad &&
+                d.Name.Contains("xbox", StringComparison.OrdinalIgnoreCase));
+
+            if (!alreadyHasXbox)
+            {
+                results[dev.Id] = dev;
+            }
+        }
+
         return results.Values
             .OrderBy(d => d.BatteryPercent)
             .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
@@ -176,7 +207,8 @@ public static class BluetoothBatteryService
                         Name: name,
                         BatteryPercent: percent,
                         Category: InferCategory(name),
-                        IsBle: true
+                        IsBle: true,
+                        ConnectionLabel: "BLE"
                     ));
                 }
             }

@@ -14,5 +14,6 @@ public sealed record BluetoothBatteryDevice(
     string Name,
     int BatteryPercent,
     DeviceCategory Category,
-    bool IsBle
+    bool IsBle,
+    string ConnectionLabel = "BT"
 );

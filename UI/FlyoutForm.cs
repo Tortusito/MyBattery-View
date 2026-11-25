@@ -10,6 +10,7 @@ public sealed class FlyoutForm : Form
 {
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
+    private const int WM_DEVICECHANGE = 0x0219;
 
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -49,6 +50,15 @@ public sealed class FlyoutForm : Form
         base.OnHandleCreated(e);
         int preference = DWMWCP_ROUND;
         _ = DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference, sizeof(int));
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_DEVICECHANGE)
+        {
+            RefreshRequested?.Invoke(this, EventArgs.Empty);
+        }
+        base.WndProc(ref m);
     }
 
     public void UpdateDevices(IReadOnlyList<BluetoothBatteryDevice> devices, bool isRefreshing = false)
@@ -138,7 +148,7 @@ public sealed class FlyoutForm : Form
         using var titleFont = new Font("Segoe UI", 10f, FontStyle.Bold);
         using var textBrush = new SolidBrush(textPrimary);
         using var mutedBrush = new SolidBrush(textMuted);
-        g.DrawString("Batería Bluetooth", titleFont, textBrush, 16, 15);
+        g.DrawString("Batería Wireless", titleFont, textBrush, 16, 15);
 
         // Refresh button
         _refreshBtnRect = new Rectangle(Width - 42, 11, 28, 28);
@@ -161,7 +171,7 @@ public sealed class FlyoutForm : Form
             using var emptyFont = new Font("Segoe UI", 9f, FontStyle.Regular);
             var emptyRect = new RectangleF(16, 62, Width - 32, 48);
             var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString("No hay dispositivos Bluetooth con batería detectados.", emptyFont, mutedBrush, emptyRect, sf);
+            g.DrawString("No hay dispositivos wireless con batería detectados.", emptyFont, mutedBrush, emptyRect, sf);
         }
         else
         {
