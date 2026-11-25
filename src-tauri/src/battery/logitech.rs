@@ -11,13 +11,15 @@ use windows::Win32::Devices::HumanInterfaceDevice::{
     HidD_GetProductString, HidP_GetCaps, HIDD_ATTRIBUTES, HIDP_CAPS, HIDP_STATUS_SUCCESS,
     PHIDP_PREPARSED_DATA,
 };
-use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_IO_PENDING, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+};
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, ReadFile, WriteFile, FILE_FLAGS_AND_ATTRIBUTES, FILE_FLAG_OVERLAPPED,
     FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
-use windows::Win32::System::IO::{CancelIo, GetOverlappedResult, OVERLAPPED};
+use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
 const LOGITECH_VID: u16 = 0x046D;
 
@@ -205,10 +207,16 @@ unsafe fn send_recv_hid(handle: HANDLE, out_buf: &[u8], in_len: usize) -> Option
     let Ok(event_w) = CreateEventW(None, true, false, None) else { return None; };
     let mut ov_w = OVERLAPPED { hEvent: event_w, ..Default::default() };
     let mut written = 0u32;
-    let _ = WriteFile(handle, Some(out_buf), Some(&mut written), Some(&mut ov_w));
-    let wait_w = WaitForSingleObject(event_w, 80);
-    if wait_w != WAIT_OBJECT_0 {
-        let _ = CancelIo(handle);
+    if WriteFile(handle, Some(out_buf), Some(&mut written), Some(&mut ov_w)).is_err()
+        && GetLastError() != ERROR_IO_PENDING
+    {
+        let _ = CloseHandle(event_w);
+        return None;
+    }
+    if WaitForSingleObject(event_w, 80) != WAIT_OBJECT_0 {
+        let _ = CancelIoEx(handle, Some(&ov_w));
+        let mut tmp = 0u32;
+        let _ = GetOverlappedResult(handle, &ov_w, &mut tmp, true);
         let _ = CloseHandle(event_w);
         return None;
     }
@@ -219,10 +227,16 @@ unsafe fn send_recv_hid(handle: HANDLE, out_buf: &[u8], in_len: usize) -> Option
         let mut ov_r = OVERLAPPED { hEvent: event_r, ..Default::default() };
         let mut in_buf = vec![0u8; in_len];
         let mut read = 0u32;
-        let _ = ReadFile(handle, Some(&mut in_buf), Some(&mut read), Some(&mut ov_r));
-        let wait_r = WaitForSingleObject(event_r, 80);
-        if wait_r != WAIT_OBJECT_0 {
-            let _ = CancelIo(handle);
+        if ReadFile(handle, Some(&mut in_buf), Some(&mut read), Some(&mut ov_r)).is_err()
+            && GetLastError() != ERROR_IO_PENDING
+        {
+            let _ = CloseHandle(event_r);
+            return None;
+        }
+        if WaitForSingleObject(event_r, 80) != WAIT_OBJECT_0 {
+            let _ = CancelIoEx(handle, Some(&ov_r));
+            let mut tmp = 0u32;
+            let _ = GetOverlappedResult(handle, &ov_r, &mut tmp, true);
             let _ = CloseHandle(event_r);
             return None;
         }

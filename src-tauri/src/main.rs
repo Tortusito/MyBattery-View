@@ -5,6 +5,7 @@ mod settings;
 
 use battery::{collect_all_devices, BatteryDevice};
 use settings::{load_settings, save_settings, AppSettings};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::image::Image;
@@ -15,6 +16,25 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Positio
 struct AppState {
     devices: Arc<Mutex<Vec<BatteryDevice>>>,
     settings: Arc<Mutex<AppSettings>>,
+    is_scanning: Arc<AtomicBool>,
+}
+
+fn trigger_scan(app: AppHandle) {
+    let state = app.state::<AppState>();
+    if state.is_scanning.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let devices_arc = state.devices.clone();
+    let scanning_arc = state.is_scanning.clone();
+    std::thread::spawn(move || {
+        let list = collect_all_devices();
+        if let Ok(mut guard) = devices_arc.lock() {
+            *guard = list.clone();
+        }
+        update_tray_tooltip(&app, &list);
+        let _ = app.emit("devices-updated", &list);
+        scanning_arc.store(false, Ordering::SeqCst);
+    });
 }
 
 #[tauri::command]
@@ -24,13 +44,8 @@ fn get_devices(state: State<AppState>) -> Vec<BatteryDevice> {
 
 #[tauri::command]
 fn refresh_devices(app: AppHandle, state: State<AppState>) -> Vec<BatteryDevice> {
-    let list = collect_all_devices();
-    if let Ok(mut guard) = state.devices.lock() {
-        *guard = list.clone();
-    }
-    update_tray_tooltip(&app, &list);
-    let _ = app.emit("devices-updated", &list);
-    list
+    trigger_scan(app);
+    state.devices.lock().map(|d| d.clone()).unwrap_or_default()
 }
 
 #[tauri::command]
@@ -208,11 +223,13 @@ fn main() {
     let initial_settings = load_settings();
     let devices_arc = Arc::new(Mutex::new(Vec::<BatteryDevice>::new()));
     let settings_arc = Arc::new(Mutex::new(initial_settings));
+    let scanning_arc = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .manage(AppState {
             devices: devices_arc.clone(),
             settings: settings_arc.clone(),
+            is_scanning: scanning_arc.clone(),
         })
         .invoke_handler(tauri::generate_handler![
             get_devices,
@@ -247,15 +264,7 @@ fn main() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => open_main_window(app.clone()),
-                    "refresh" => {
-                        let state = app.state::<AppState>();
-                        let list = collect_all_devices();
-                        if let Ok(mut guard) = state.devices.lock() {
-                            *guard = list.clone();
-                        }
-                        update_tray_tooltip(app, &list);
-                        let _ = app.emit("devices-updated", &list);
-                    }
+                    "refresh" => trigger_scan(app.clone()),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -292,12 +301,7 @@ fn main() {
 
             let app_handle = app.handle().clone();
             std::thread::spawn(move || loop {
-                let list = collect_all_devices();
-                if let Ok(mut guard) = app_handle.state::<AppState>().devices.lock() {
-                    *guard = list.clone();
-                }
-                update_tray_tooltip(&app_handle, &list);
-                let _ = app_handle.emit("devices-updated", &list);
+                trigger_scan(app_handle.clone());
 
                 let interval = app_handle
                     .state::<AppState>()
