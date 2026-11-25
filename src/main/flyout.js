@@ -10,7 +10,7 @@ const store = require('./store');
 // step, which caps the motion near 27 fps. That animation needs a thick frame, hence resizable.
 const WIDTH = 300;
 const ROW = 45;
-const CHROME = 62;
+const CHROME = 82;
 const EXIT_MS = 90;
 const EDGE = 12;
 const FREE_AFTER_MS = 60 * 1000;

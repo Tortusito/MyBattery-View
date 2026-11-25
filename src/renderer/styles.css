@@ -581,8 +581,8 @@ html, body {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-5px); }
 }
-.empty-icon { display: block; margin: 0 auto 12px; -webkit-user-drag: none; border-radius: 20px; animation: botFloat 3.4s ease-in-out infinite; }
-.about-icon { display: block; margin-right: 14px; -webkit-user-drag: none; border-radius: 12px; animation: botFloat 3.4s ease-in-out infinite; }
+.empty-icon { display: block; margin: 0 auto 12px; -webkit-user-drag: none; animation: botFloat 3.4s ease-in-out infinite; }
+.about-icon { display: block; margin-right: 14px; -webkit-user-drag: none; animation: botFloat 3.4s ease-in-out infinite; }
 body.reduce-motion .empty-icon,
 body.reduce-motion .about-icon { animation: none; }
 .about-icon + .settings-label { margin-right: auto; }

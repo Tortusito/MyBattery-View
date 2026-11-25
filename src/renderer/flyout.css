@@ -41,7 +41,7 @@ button svg { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap
 .row.off .fill { background: var(--sub); opacity: 0.45; }
 .name .ago { flex: none; font-size: 0.85em; opacity: 0.8; }
 .empty { color: var(--sub); padding: 14px 0; }
-.brand { margin-top: 6px; font-size: 10px; color: var(--sub); text-align: right; opacity: 0.75; }
+.brand { margin-top: 6px; padding-bottom: 4px; font-size: 10px; color: var(--sub); text-align: center; opacity: 0.78; }
 
 :root[data-accent="wyforce"] { --ok: #00E5FF; }
 :root[data-accent="cyan"] { --ok: #00E5FF; }
