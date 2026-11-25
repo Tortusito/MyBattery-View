@@ -835,3 +835,56 @@ body.reduce-motion .nav-item:active {
   transform: none !important;
 }
 body.reduce-motion .device-card::after { display: none; } /* no cursor-tracked glare */
+
+/* ---------- accent palettes & icon styles ---------- */
+:root[data-accent="cyan"] {
+  --accent: #00B4D8;
+  --level-high: #00E5FF;
+  --green: #00E5FF;
+}
+:root[data-accent="emerald"] {
+  --accent: #10B981;
+  --level-high: #10B981;
+  --green: #10B981;
+}
+:root[data-accent="amber"] {
+  --accent: #F59E0B;
+  --level-high: #F59E0B;
+  --green: #F59E0B;
+}
+:root[data-accent="rose"] {
+  --accent: #F43F5E;
+  --level-high: #F43F5E;
+  --green: #F43F5E;
+}
+
+.color-swatches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background: var(--swatch);
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.active {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+body.icon-tinted .device-type-icon,
+body.icon-tinted .sheet-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 8px;
+}
+body.icon-bold .device-type-icon svg,
+body.icon-bold .sheet-icon svg {
+  stroke-width: 2.1;
+}

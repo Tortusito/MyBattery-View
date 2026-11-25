@@ -61,9 +61,20 @@ function render(items) {
   }
 }
 
+function syncFlyoutAppearance() {
+  if (!window.batteryHub.getSettings) return;
+  window.batteryHub.getSettings().then((s) => {
+    if (!s) return;
+    document.documentElement.dataset.accent = s.accentColor || 'wyforce';
+    document.body.classList.toggle('icon-tinted', s.iconStyle === 'tinted');
+    document.body.classList.toggle('icon-bold', s.iconStyle === 'bold');
+  }).catch(() => {});
+}
+
 window.batteryHub.onFlyoutData(render);
 let settle = null;
 window.batteryHub.onFlyoutOpen((animated) => {
+  syncFlyoutAppearance();
   clearTimeout(settle);
   panel.classList.remove('enter', 'leave');
   if (!animated) return;
@@ -76,6 +87,7 @@ window.batteryHub.onFlyoutClose(() => {
   panel.classList.remove('enter');
   panel.classList.add('leave');
 });
+syncFlyoutAppearance();
 window.batteryHub.getFlyoutData().then(render);
 document.getElementById('open-app').addEventListener('click', () => window.batteryHub.openApp());
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.batteryHub.hideFlyout(); });

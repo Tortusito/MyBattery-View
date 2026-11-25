@@ -16,7 +16,7 @@ const { bhTranslate } = require('../src/renderer/i18n-core');
 const RENDERER = path.join(__dirname, '../src/renderer');
 const SCRIPTS = ['app.js', 'detail.js', 'support.js', 'flyout.js'];
 const PAGES = ['index.html', 'flyout.html'];
-const NOT_TEXT = new Set(['Enter', 'Escape', 'Home', 'End', 'Tab', 'MyBattery-View', 'by Wyforce', 'English', 'Español', 'Português (Brasil)', '中文', 'עברית']);
+const NOT_TEXT = new Set(['Enter', 'Escape', 'Home', 'End', 'Tab', 'MyBattery-View', 'by Wyforce', 'Wyforce', 'Cyan', 'Emerald', 'Amber', 'Rose', 'English', 'Español', 'Português (Brasil)', '中文', 'עברית']);
 const HOLE = '\u0001'; // stands where a template puts a value
 
 const read = (f) => fs.readFileSync(path.join(RENDERER, f), 'utf8');

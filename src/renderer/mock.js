@@ -49,7 +49,7 @@ if (!window.batteryHub) {
   };
 
   let mockSettings = {
-    pollIntervalSec: 60, theme: 'system', density: 'detailed', sortMode: 'urgent',
+    pollIntervalSec: 60, theme: 'system', accentColor: 'wyforce', iconStyle: 'line', density: 'detailed', sortMode: 'urgent',
     notifyEnabled: true, notifyThreshold: 20, notifyCharged: false,
     trayEnabled: true, trayMode: 'perDevice', closeToTray: true, launchAtLogin: false, startMinimized: false,
   };

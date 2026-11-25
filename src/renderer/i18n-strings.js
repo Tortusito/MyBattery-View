@@ -4,6 +4,13 @@
 // English. Loaded as a plain script in the windows and required in Node, like estimate.js.
 const BH_STRINGS = {
   ru: {
+    "Accent color": "Цвет акцента",
+    "Customize the highlight color.": "Настройка цвета выделения.",
+    "Icon style": "Стиль значков",
+    "Choose how device icons look.": "Выберите вид значков устройств.",
+    "Line": "Контур",
+    "Tinted": "Тонированный",
+    "Bold": "Жирный",
     "Left": "Левый",
     "Right": "Правый",
     "Case": "Кейс",
@@ -249,6 +256,13 @@ const BH_STRINGS = {
     "This device is no longer saved": "Это устройство больше не сохранено",
   },
   es: {
+    'Accent color': 'Color de acento',
+    'Customize the highlight color.': 'Personaliza el color de acento.',
+    'Icon style': 'Estilo de iconos',
+    'Choose how device icons look.': 'Elige cómo se ven los iconos de dispositivos.',
+    'Line': 'Línea',
+    'Tinted': 'Tintado',
+    'Bold': 'Grueso',
     'Devices': 'Dispositivos',
     'Add device': 'Añadir dispositivo',
     'Settings': 'Ajustes',
@@ -764,6 +778,13 @@ const BH_STRINGS = {
   // Português do Brasil. Termos do Windows em pt-BR (Configurações, Bandeja do sistema); avisos sem
   // depender do gênero do dispositivo; "receptor" para dongle.
   pt: {
+    'Accent color': 'Cor de destaque',
+    'Customize the highlight color.': 'Personalize a cor de destaque.',
+    'Icon style': 'Estilo dos ícones',
+    'Choose how device icons look.': 'Escolha a aparência dos ícones dos dispositivos.',
+    'Line': 'Linha',
+    'Tinted': 'Colorido',
+    'Bold': 'Negrito',
     'Left': 'Esquerdo',
     'Right': 'Direito',
     'Case': 'Estojo',

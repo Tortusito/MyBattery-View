@@ -814,8 +814,11 @@ async function applyDeviceIcon(card, dev, icon, pop) {
 const currentSettings = {};
 
 function applyClientSettings(s) {
+  document.documentElement.dataset.accent = s.accentColor || 'wyforce';
   document.body.classList.toggle('density-compact', s.density === 'compact');
   document.body.classList.toggle('reduce-motion', !!s.reduceMotion);
+  document.body.classList.toggle('icon-tinted', s.iconStyle === 'tinted');
+  document.body.classList.toggle('icon-bold', s.iconStyle === 'bold');
 }
 
 function reflectSettingControls(s) {
@@ -824,6 +827,9 @@ function reflectSettingControls(s) {
   });
   document.querySelectorAll('.segmented[data-setting]').forEach((seg) => {
     seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === s[seg.dataset.setting]));
+  });
+  document.querySelectorAll('.color-swatches[data-setting]').forEach((sw) => {
+    sw.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === (s[sw.dataset.setting] || 'wyforce')));
   });
   document.querySelectorAll('input[data-setting], select[data-setting]').forEach((inp) => {
     inp.value = s[inp.dataset.setting];
@@ -882,6 +888,9 @@ function wireSettingsControls() {
     t.addEventListener('click', () => updateSetting(t.dataset.setting, !currentSettings[t.dataset.setting]));
   });
   document.querySelectorAll('.segmented[data-setting] button').forEach((b) => {
+    b.addEventListener('click', () => updateSetting(b.parentElement.dataset.setting, b.dataset.value));
+  });
+  document.querySelectorAll('.color-swatches[data-setting] button').forEach((b) => {
     b.addEventListener('click', () => updateSetting(b.parentElement.dataset.setting, b.dataset.value));
   });
   document.querySelectorAll('select[data-setting]').forEach((sel) => {

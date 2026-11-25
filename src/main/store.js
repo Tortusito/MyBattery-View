@@ -5,6 +5,8 @@ const Store = require('electron-store');
 const DEFAULT_SETTINGS = {
   pollIntervalSec: 60,
   theme: 'system',          // 'system' | 'light' | 'dark'
+  accentColor: 'wyforce',   // 'wyforce' | 'cyan' | 'emerald' | 'amber' | 'rose'
+  iconStyle: 'line',        // 'line' | 'tinted' | 'bold'
   density: 'detailed',      // 'detailed' | 'compact'
   sortMode: 'urgent',       // 'urgent' | 'manual'
   reduceMotion: false,      // disable all UI animations/transitions
