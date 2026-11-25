@@ -29,7 +29,7 @@ pub fn clean_device_name(name: &str) -> String {
         .trim()
         .to_string();
     if cleaned.is_empty() {
-        "Dispositivo Wireless".to_string()
+        "Dispositivo inalámbrico".to_string()
     } else {
         cleaned
     }

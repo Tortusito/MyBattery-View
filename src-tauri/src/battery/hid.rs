@@ -144,7 +144,7 @@ unsafe fn try_read_device(path_u16: &[u16]) -> Option<BatteryDevice> {
             .collect();
         String::from_utf16_lossy(&u16s)
     } else {
-        "Periférico Wireless".to_string()
+        "Periférico inalámbrico".to_string()
     };
 
     let name = clean_device_name(&raw_name);
@@ -155,7 +155,7 @@ unsafe fn try_read_device(path_u16: &[u16]) -> Option<BatteryDevice> {
         category: infer_category(&name),
         name,
         percent,
-        connection: "Wireless".to_string(),
+        connection: "Inalámbrico".to_string(),
         charging: false,
     })
 }
@@ -203,6 +203,11 @@ unsafe fn extract_battery(
             continue;
         }
 
+        // Ignore empty/all-zero payloads (common on sleeping/idle 2.4 GHz dongles)
+        if report.len() > 1 && report[1..].iter().all(|&b| b == 0) {
+            continue;
+        }
+
         let mut raw_val = 0u32;
         if HidP_GetUsageValue(
             report_type,
@@ -216,10 +221,13 @@ unsafe fn extract_battery(
         {
             let max = if cap.LogicalMax > cap.LogicalMin { cap.LogicalMax } else { 100 };
             let min = cap.LogicalMin;
-            if max <= min {
+            if max <= min || (raw_val as i32) < min || (raw_val as i32) > max {
                 continue;
             }
             let pct = (((raw_val as i64 - min as i64) as f64 / (max - min) as f64) * 100.0).round() as i64;
+            if report_type == HidP_Input && pct == 0 {
+                continue;
+            }
             return Some(pct.clamp(0, 100) as u8);
         }
     }
